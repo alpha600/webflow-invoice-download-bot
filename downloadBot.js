@@ -4,15 +4,42 @@ const emoji = require('node-emoji')
 const {Builder, By, Key, promise, until} = require('selenium-webdriver')
 const firefox = require('selenium-webdriver/firefox')
 require('geckodriver');
+const prompt = require('prompt-sync')();
 
-const loginUrl = ''
-const invoicesUrl = ''
-const userKey = ''
-const passwordKey = ''
 
-// add file types to observe/download here
-const targetFileTypes = ['image', 'pdf', 'spreadsheet']
+const validateInput = (input,possibleOptions = false) => {
+    if(!input.trim()) {
+        console.log('\n')
+        console.error('\x1b[31m', `Please enter a valid input.`)
+        process.exit()
+    } 
 
+    if(!possibleOptions) {
+        return input
+    }
+
+    if(!possibleOptions.includes(input.trim().toLowerCase())) {
+        console.log('\n')
+        console.error('\x1b[31m', `${input} is not a valid input.`)
+        process.exit()
+    }
+
+    return input
+}
+
+const validInputValues = {
+    dashboardType: ['w','workspace','t','team'],
+    months: ['1','2','3','4','5','6','7','8','9','10','11','12','jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'],
+}
+
+const dashboardType = validateInput(prompt("Do you want to enter a Workspace or a Team Dashboard? (w/t) "), validInputValues['dashboardType'])
+const accountName = validateInput(prompt("Enter your account's name url parameter: "))
+const userKey = validateInput(prompt('Enter you Webflow user name: '))
+const passwordKey = validateInput(prompt.hide('Enter you Webflow password: '))
+const months = validateInput(prompt("Which month's invoices should be downloaded? "), validInputValues['months'])
+
+const loginUrl = 'https://webflow.com/dashboard/login'
+const invoicesUrl = dashboardType.toLowerCase() === 'w' || dashboardType.toLowerCase() === 'workspace' ? `https://webflow.com/dashboard/workspace/${accountName}/billing?ref=billing_tab` : `https://webflow.com/dashboard/team/${accountName}/billing?org=${accountName}`
 
 let options = new firefox.Options()
     .headless()
@@ -24,7 +51,9 @@ let options = new firefox.Options()
     .setPreference("browser.download.manager.showWhenStarting", false)
     .setPreference("browser.download.dir", path.join(__dirname, 'assets/downloads'))
     .setPreference("browser.helperApps.neverAsk.saveToDisk", "application/pdf")
+    // path to firefox application directory
     .setBinary("/Applications/Firefox Developer Edition.app/Contents/MacOS/firefox-bin")
+    // path to firefox profile
     .setProfile("")
 
 let driver = new Builder()
@@ -65,7 +94,7 @@ const downloadFiles = async fileUrls => {
     return
 }
 
-const main = async () => {
+const fetchInvoicesFromWebflow = async () => {
     try {
         await driver.get(loginUrl);
         console.log(emoji.get("desktop_computer"), ' ',`Entered ${loginUrl}...`);
@@ -74,7 +103,7 @@ const main = async () => {
         const userFormField = await driver.findElement(By.css("[name='username']")).sendKeys(userKey)
         const passwordFormField = await driver.findElement(By.css("[name='password']")).sendKeys(passwordKey)
         await driver.findElement(By.css("[data-automation-id='login-button']")).click()
-        await driver.wait(until.titleIs(''))
+        await driver.wait(until.titleIs(`${accountName} Sites - Webflow`))
         console.log(emoji.get("key"), ' ',`Login successfully for ${loginUrl}...`);
         console.log('\n');
 
@@ -94,4 +123,4 @@ const main = async () => {
     }
 }
 
-main()
+fetchInvoicesFromWebflow()
