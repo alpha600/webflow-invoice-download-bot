@@ -2,7 +2,7 @@
   "name": "nodedownloadbot",
   "version": "1.0.0",
   "description": "",
-  "main": "pdfDownload.js",
+  "main": "download.js",
   "scripts": {
     "download": "node download.js"
   },
