@@ -1,42 +1,38 @@
 const fs = require('fs')
 const path = require('path')
-const emoji = require('node-emoji')
 const {Builder, By, Key, promise, until} = require('selenium-webdriver')
 const firefox = require('selenium-webdriver/firefox')
-require('geckodriver');
 const prompt = require('prompt-sync')();
+require('geckodriver');
+
+const validateInput = require('./helpers/validateInput')
+const sleep = require('./helpers/sleep')
 
 
-const validateInput = (input,possibleOptions = false) => {
-    if(!input.trim()) {
-        console.log('\n')
-        console.error('\x1b[31m', `Please enter a valid input.`)
-        process.exit()
-    } 
+if (!process.argv[2]) {
+    console.log('\n')
+    console.error('\x1b[31m', 'Please enter a path to a download directory:')
+    console.log('\n')
+    console.log('\x1b[0m', 'npm run download <absolute destination path>')
+    console.log('\x1b[0m', 'E.g.: npm run download /Users/user/Downloads')
+    console.log('\n')
 
-    if(!possibleOptions) {
-        return input
-    }
-
-    if(!possibleOptions.includes(input.trim().toLowerCase())) {
-        console.log('\n')
-        console.error('\x1b[31m', `${input} is not a valid input.`)
-        process.exit()
-    }
-
-    return input
+    process.exit()
 }
+
+let downloadDirectory = process.argv[2]
+downloadDirectory = downloadDirectory.endsWith('/') ? downloadDirectory : `${downloadDirectory}/`
 
 const validInputValues = {
     dashboardType: ['w','workspace','t','team'],
-    months: ['1','2','3','4','5','6','7','8','9','10','11','12','jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'],
+    months: ['1','2','3','4','5','6','7','8','9','10','11','12','jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec','january','february','march','april','may','june','july','august','september','october','november','december'],
 }
 
 const dashboardType = validateInput(prompt("Do you want to enter a Workspace or a Team Dashboard? (w/t) "), validInputValues['dashboardType'])
 const accountName = validateInput(prompt("Enter your account's name url parameter: "))
 const userKey = validateInput(prompt('Enter you Webflow user name: '))
 const passwordKey = validateInput(prompt.hide('Enter you Webflow password: '))
-const months = validateInput(prompt("Which month's invoices should be downloaded? "), validInputValues['months'])
+const month = validateInput(prompt("Which month's invoices should be downloaded? "), validInputValues['months'])
 
 const loginUrl = 'https://webflow.com/dashboard/login'
 const invoicesUrl = dashboardType.toLowerCase() === 'w' || dashboardType.toLowerCase() === 'workspace' ? `https://webflow.com/dashboard/workspace/${accountName}/billing?ref=billing_tab` : `https://webflow.com/dashboard/team/${accountName}/billing?org=${accountName}`
@@ -49,12 +45,10 @@ let options = new firefox.Options()
     .setPreference("browser.download.start_downloads_in_tmp_dir", true)
     .setPreference("browser.download.folderList", 2)
     .setPreference("browser.download.manager.showWhenStarting", false)
-    .setPreference("browser.download.dir", path.join(__dirname, 'assets/downloads'))
+    .setPreference("browser.download.dir", downloadDirectory)
     .setPreference("browser.helperApps.neverAsk.saveToDisk", "application/pdf")
-    // path to firefox application directory
-    .setBinary("/Applications/Firefox Developer Edition.app/Contents/MacOS/firefox-bin")
-    // path to firefox profile
-    .setProfile("")
+    .setBinary("[path to firefox application directory]")
+    .setProfile("[path to firefox profile directory]")
 
 let driver = new Builder()
     .forBrowser('firefox')
@@ -62,13 +56,75 @@ let driver = new Builder()
     .build()
 
 console.log('\n');
-console.log(emoji.get("arrow_down"), ' ',`Started crawling process for ${loginUrl}...`);
+console.log(`⬇️   Started crawling process for ${loginUrl}...`);
 console.log('\n');
 
-const sleep = time => new Promise(resolve => setTimeout(resolve, time))
 
-const fileAlreadyExists = (file,directory) => {
-    return fs.existsSync(path.join(__dirname, `${directory}${file}`))
+const rowMatchesDate = async (element,month,year) => {
+    const textContent = (await element.findElement(By.css('td')).getText()).toLowerCase()
+    
+    return textContent.includes(month) && textContent.includes(year)
+}
+
+const filterRows = async (rows,month,year) => {
+    const filteredRows = await rows.reduce(async (acc,val) => {
+        if(!await rowMatchesDate(val,month,year)) return acc
+        return [...await acc, val]
+    }, [])
+
+    return filteredRows
+}
+
+const getFileUrls = async rows => {
+    const fileUrls = []
+
+    let filteredRows = await filterRows((await rows), month, new Date().getFullYear())
+
+    let checkForMissingInvoices = false
+    let checkForPrecedingYear = false
+    let loadMoreInvoices = false
+    let filterAgain = false
+
+    let lastInvoiceRow = await rows[rows.length - 1]
+
+    if(await rowMatchesDate(lastInvoiceRow,month,new Date().getFullYear())) checkForMissingInvoices = true
+    if(!filteredRows.length) checkForPrecedingYear = true
+
+    if (checkForMissingInvoices === true || checkForPrecedingYear === true) {
+        loadMoreInvoices = true
+        filterAgain = true
+    }
+    
+    while(loadMoreInvoices === true) {
+        await driver.findElement(By.css("a[ng-show='starting_after']")).click()
+        
+        const invoices = await driver.findElements(By.css('.invoices tbody tr'))
+        const lastInvoice = invoices[invoices.length - 1]
+        
+        if(!(await lastInvoice.getText()).toLowerCase().includes(month) && checkForMissingInvoices) {
+            loadMoreInvoices = false
+        }
+
+        if( (await lastInvoice.getText()).toLowerCase().includes(new Date().getFullYear() - 2)  ) {
+            loadMoreInvoices = false
+        }
+    }
+    
+    if (filterAgain === true && checkForMissingInvoices === true) {
+        filteredRows = await filterRows((await driver.findElements(By.css('.invoices tbody tr'))),month,new Date().getFullYear())
+    }
+
+    if (filterAgain === true && checkForPrecedingYear === true) {
+        filteredRows = await filterRows((await driver.findElements(By.css('.invoices tbody tr'))),month,new Date().getFullYear() - 1)
+    }
+
+    filteredRows.forEach(async row => fileUrls.push(row.findElement(By.css('a[ng-href]'))))
+
+    return fileUrls
+}
+
+const fileAlreadyExists = (file,path) => {
+    return fs.existsSync(`${path}${file}`)
 }
 
 const downloadFiles = async fileUrls => {
@@ -76,19 +132,19 @@ const downloadFiles = async fileUrls => {
         const href = await fileUrl.getAttribute('href')
         const urlSegments = href.split('/')
         const fileName = urlSegments[urlSegments.length - 1]
-        
-        if (fileAlreadyExists(fileName,'assets/downloads/Webflow-')) {
-            console.log(emoji.get("repeat"), ' ',`File ${fileName} already downloaded...`);
+
+        if (fileAlreadyExists(fileName,`${downloadDirectory}Webflow-`)) {
+            console.log(`🔁  File ${fileName} already downloaded...`);
             continue
         }
 
         fileUrl.click()
 
-        while (!fileAlreadyExists(fileName,'assets/downloads/Webflow-')) {
+        while (!fileAlreadyExists(fileName,`${downloadDirectory}Webflow-`)) {
             await sleep(1)
         }
 
-        console.log(emoji.get("white_check_mark"), ' ',`Downloaded ${fileName}!`);
+        console.log(`✅  Downloaded ${fileName}!`);
     }
 
     return
@@ -97,19 +153,22 @@ const downloadFiles = async fileUrls => {
 const fetchInvoicesFromWebflow = async () => {
     try {
         await driver.get(loginUrl);
-        console.log(emoji.get("desktop_computer"), ' ',`Entered ${loginUrl}...`);
+        console.log(`🖥️   Entered ${loginUrl}...`);
         console.log('\n');
 
         const userFormField = await driver.findElement(By.css("[name='username']")).sendKeys(userKey)
         const passwordFormField = await driver.findElement(By.css("[name='password']")).sendKeys(passwordKey)
         await driver.findElement(By.css("[data-automation-id='login-button']")).click()
-        await driver.wait(until.titleIs(`${accountName} Sites - Webflow`))
-        console.log(emoji.get("key"), ' ',`Login successfully for ${loginUrl}...`);
+        await driver.wait(until.urlContains(`workspace` || `team`))
+        console.log(`🔑  Login successfully for ${loginUrl}...`);
         console.log('\n');
 
         await driver.get(invoicesUrl)
-        const fileUrls = await driver.wait(until.elementsLocated(By.css('#invoices a[ng-href]')))
         
+        const allFileRows = await driver.wait(until.elementsLocated(By.css('.invoices tbody tr')))
+
+        const fileUrls = await getFileUrls(await driver.wait(until.elementsLocated(By.css('.invoices tbody tr'))))
+
         await downloadFiles(fileUrls)
 
         await sleep(1000)
@@ -117,7 +176,7 @@ const fetchInvoicesFromWebflow = async () => {
 
     finally {
         console.log('\n');
-        console.log(emoji.get("partying_face"), ' ', "\x1b[32m", 'Woohoo, all downloads completed!', ' ', emoji.get("champagne"));
+        console.log('🥳 ', "\x1b[32m", 'Woohoo, all downloads completed!', ' 🍾');
         console.log('\n');
         await driver.quit();
     }
