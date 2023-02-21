@@ -1,4 +1,4 @@
-# DOwnload bot for webflow invoices
+# Download bot for webflow invoices
 
 The webflow invoice download bot logs into your webflow account headlessly with given credentials and downloads all invoices for a given month.
 The bot is built on node.js and uses selenium web driver for automation. 
