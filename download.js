@@ -28,6 +28,7 @@ const validInputValues = {
     months: ['1','2','3','4','5','6','7','8','9','10','11','12','jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec','january','february','march','april','may','june','july','august','september','october','november','december'],
 }
 
+// user input data
 const dashboardType = validateInput(prompt("Do you want to enter a Workspace or a Team Dashboard? (w/t) "), validInputValues['dashboardType'])
 const accountName = validateInput(prompt("Enter your account's name url parameter: "))
 const userKey = validateInput(prompt('Enter you Webflow user name: '))
@@ -37,6 +38,18 @@ const month = validateInput(prompt("Which month's invoices should be downloaded?
 const loginUrl = 'https://webflow.com/dashboard/login'
 const invoicesUrl = dashboardType.toLowerCase() === 'w' || dashboardType.toLowerCase() === 'workspace' ? `https://webflow.com/dashboard/workspace/${accountName}/billing?ref=billing_tab` : `https://webflow.com/dashboard/team/${accountName}/billing?org=${accountName}`
 
+// selectors and data for dom interaction
+const userInputSelector = "[name='email']"
+const passwordInputSelector = "[name='password']"
+const loginButtonSelector = "button[type='submit']"
+const tableWrapperSelector = "section"
+const tableHeadingSelector = "h2"
+const tableHeading = "All invoices"
+const tableRowSelector = "tbody tr"
+const downloadLinkSelector = "a"
+const loadMoreButtonSelector = "button"
+
+// firefox browser options
 let options = new firefox.Options()
     .headless()
     .setPreference("browser.link.open_newwindow", 1)
@@ -47,9 +60,12 @@ let options = new firefox.Options()
     .setPreference("browser.download.manager.showWhenStarting", false)
     .setPreference("browser.download.dir", downloadDirectory)
     .setPreference("browser.helperApps.neverAsk.saveToDisk", "application/pdf")
-    .setBinary("[path to firefox application directory]")
-    .setProfile("[path to firefox profile directory]")
+    .setBinary("[path_to_firefox_binary]")
 
+let profile = '[path_to_firefox_profile]'
+options.setProfile(profile)
+
+// driver init
 let driver = new Builder()
     .forBrowser('firefox')
     .setFirefoxOptions(options)
@@ -75,7 +91,7 @@ const filterRows = async (rows,month,year) => {
     return filteredRows
 }
 
-const getFileUrls = async rows => {
+const getFileUrls = async (rows,section) => {
     const fileUrls = []
 
     let filteredRows = await filterRows((await rows), month, new Date().getFullYear())
@@ -96,9 +112,9 @@ const getFileUrls = async rows => {
     }
     
     while(loadMoreInvoices === true) {
-        await driver.findElement(By.css("a[ng-show='starting_after']")).click()
+        await section.findElement(By.css(loadMoreButtonSelector)).click()
         
-        const invoices = await driver.findElements(By.css('.invoices tbody tr'))
+        const invoices = await section.findElements(By.css(tableRowSelector))
         const lastInvoice = invoices[invoices.length - 1]
         
         if(!(await lastInvoice.getText()).toLowerCase().includes(month) && checkForMissingInvoices) {
@@ -111,14 +127,14 @@ const getFileUrls = async rows => {
     }
     
     if (filterAgain === true && checkForMissingInvoices === true) {
-        filteredRows = await filterRows((await driver.findElements(By.css('.invoices tbody tr'))),month,new Date().getFullYear())
+        filteredRows = await filterRows((await section.findElements(By.css(tableRowSelector))),month,new Date().getFullYear())
     }
 
     if (filterAgain === true && checkForPrecedingYear === true) {
-        filteredRows = await filterRows((await driver.findElements(By.css('.invoices tbody tr'))),month,new Date().getFullYear() - 1)
+        filteredRows = await filterRows((await section.findElements(By.css(tableRowSelector))),month,new Date().getFullYear() - 1)
     }
 
-    filteredRows.forEach(async row => fileUrls.push(row.findElement(By.css('a[ng-href]'))))
+    filteredRows.forEach(async row => fileUrls.push(row.findElement(By.css(downloadLinkSelector))))
 
     return fileUrls
 }
@@ -151,23 +167,35 @@ const downloadFiles = async fileUrls => {
 }
 
 const fetchInvoicesFromWebflow = async () => {
+    let invoicesSection
+
     try {
         await driver.get(loginUrl);
         console.log(`🖥️   Entered ${loginUrl}...`);
         console.log('\n');
 
-        const userFormField = await driver.findElement(By.css("[name='username']")).sendKeys(userKey)
-        const passwordFormField = await driver.findElement(By.css("[name='password']")).sendKeys(passwordKey)
-        await driver.findElement(By.css("[data-automation-id='login-button']")).click()
+        const userFormField = await driver.findElement(By.css(userInputSelector)).sendKeys(userKey)
+        const passwordFormField = await driver.findElement(By.css(passwordInputSelector)).sendKeys(passwordKey)
+        await driver.findElement(By.css(loginButtonSelector)).click()
         await driver.wait(until.urlContains(`workspace` || `team`))
         console.log(`🔑  Login successfully for ${loginUrl}...`);
         console.log('\n');
 
         await driver.get(invoicesUrl)
-        
-        const allFileRows = await driver.wait(until.elementsLocated(By.css('.invoices tbody tr')))
 
-        const fileUrls = await getFileUrls(await driver.wait(until.elementsLocated(By.css('.invoices tbody tr'))))
+        await driver.wait(until.elementsLocated(By.css(tableWrapperSelector)))
+        const sections = await driver.findElements(By.css(tableWrapperSelector))
+
+        for (const section of sections) {
+            await driver.wait(until.elementsLocated(By.css(tableHeadingSelector)))
+            let sectionHeading = await section.findElement(By.css(tableHeadingSelector)) 
+
+            if (await sectionHeading.getText() === tableHeading) {
+                invoicesSection = section
+            }
+        }
+
+        const fileUrls = await getFileUrls(await invoicesSection.findElements(By.css(tableRowSelector)), invoicesSection)
 
         await downloadFiles(fileUrls)
 
