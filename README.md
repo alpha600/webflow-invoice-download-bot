@@ -17,17 +17,16 @@ In order for the bot to run properly you need to replace some placeholders in th
 Before you continue it's highly recommended to create a new firefox profile for bots only. 
 In the settings of the newly created profile you have to change the default behaviour when clicking on download links otherwise the bot won't download any invoices.
 
-On lines 50 – 51 just replace the paths to your firefox installation path and and your new firefox profile path:
+Just replace the paths to your firefox installation path and and your new firefox profile path:
 ```
-// other code
-
-.setBinary("[path to firefox application directory]")
-.setProfile("[path to firefox profile]")
-
-// other code
+let options = new firefox.Options()
    ...
+    .setBinary("[path_to_firefox_binary]")
+
+
+let profile = '[path_to_firefox_profile]'
+options.setProfile(profile)
 ```
-On line 51 you should reference you newly created bot profile.
 For more details check the mozilla docs: https://support.mozilla.org/en-US/kb/change-firefox-behavior-when-open-file
 
 ## Usage
