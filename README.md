@@ -7,7 +7,7 @@ Currently the script is only working in firefox browsers but should be adjustabl
 ## Installation
 
 First you need to run:
-```
+```bash
 npm install
 ```
 
@@ -18,7 +18,7 @@ Before you continue it's highly recommended to create a new firefox profile for 
 In the settings of the newly created profile you have to change the default behaviour when clicking on download links otherwise the bot won't download any invoices.
 
 Just replace the paths to your firefox installation path and and your new firefox profile path:
-```
+```js
 let options = new firefox.Options()
    ...
     .setBinary("[path_to_firefox_binary]")
@@ -31,7 +31,7 @@ For more details check the mozilla docs: https://support.mozilla.org/en-US/kb/ch
 
 ## Usage
 In the main directory run:
-```
+```bash
 npm run download [download destination path]
 ```
 E.g.: npm run download /Users/username/Downloads
